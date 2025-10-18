@@ -1,0 +1,271 @@
+service: extracker-backend
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ap-south-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 30
+  
+  environment:
+    EXPENSES_TABLE: ${self:service}-${self:provider.stage}-expenses
+    CREDIT_CARDS_TABLE: ${self:service}-${self:provider.stage}-creditcards
+    USER_POOL_ID: !Ref CognitoUserPool
+    REGION: ${self:provider.region}
+  
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:BatchWriteItem
+          Resource:
+            - !GetAtt ExpensesTable.Arn
+            - !GetAtt CreditCardsTable.Arn
+            - !Sub '${ExpensesTable.Arn}/index/*'
+            - !Sub '${CreditCardsTable.Arn}/index/*'
+
+functions:
+  # Expense Management
+  getExpenses:
+    handler: handlers/expenses.getExpenses
+    events:
+      - http:
+          path: /expenses
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  addExpense:
+    handler: handlers/expenses.addExpense
+    events:
+      - http:
+          path: /expenses
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  updateExpense:
+    handler: handlers/expenses.updateExpense
+    events:
+      - http:
+          path: /expenses/{id}
+          method: put
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  deleteExpense:
+    handler: handlers/expenses.deleteExpense
+    events:
+      - http:
+          path: /expenses/{id}
+          method: delete
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  # Credit Card Management
+  getCreditCards:
+    handler: handlers/creditcards.getCreditCards
+    events:
+      - http:
+          path: /creditcards
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  addCreditCard:
+    handler: handlers/creditcards.addCreditCard
+    events:
+      - http:
+          path: /creditcards
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  updateCreditCard:
+    handler: handlers/creditcards.updateCreditCard
+    events:
+      - http:
+          path: /creditcards/{id}
+          method: put
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  deleteCreditCard:
+    handler: handlers/creditcards.deleteCreditCard
+    events:
+      - http:
+          path: /creditcards/{id}
+          method: delete
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+resources:
+  Resources:
+    # IAM Role for Cognito to send SMS
+    CognitoSNSRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: cognito-idp.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: CognitoSNSPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - sns:Publish
+                  Resource: '*'
+
+    # Cognito User Pool
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-${self:provider.stage}-user-pool
+        AutoVerifiedAttributes:
+          - email
+          - phone_number
+        UsernameAttributes:
+          - email
+          - phone_number
+        Schema:
+          - Name: email
+            Required: false
+            Mutable: true
+          - Name: phone_number
+            Required: false
+            Mutable: true
+          - Name: name
+            Required: false
+            Mutable: true
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireUppercase: true
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: false
+        MfaConfiguration: OPTIONAL
+        SmsConfiguration:
+          SnsCallerArn: !GetAtt CognitoSNSRole.Arn
+          ExternalId: ${self:service}-${self:provider.stage}-external
+        EmailConfiguration:
+          EmailSendingAccount: COGNITO_DEFAULT
+
+    # Cognito User Pool Client
+    CognitoUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${self:provider.stage}-client
+        UserPoolId: !Ref CognitoUserPool
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+          - ALLOW_USER_SRP_AUTH
+        PreventUserExistenceErrors: ENABLED
+
+    # API Gateway Authorizer
+    ApiGatewayAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: CognitoAuthorizer
+        Type: COGNITO_USER_POOLS
+        IdentitySource: method.request.header.Authorization
+        RestApiId: !Ref ApiGatewayRestApi
+        ProviderARNs:
+          - !GetAtt CognitoUserPool.Arn
+
+    # DynamoDB Tables
+    ExpensesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.EXPENSES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: expenseId
+            AttributeType: S
+          - AttributeName: monthKey
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: expenseId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: monthKeyIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: monthKey
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+
+    CreditCardsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.CREDIT_CARDS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: cardId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: cardId
+            KeyType: RANGE
+
+  Outputs:
+    UserPoolId:
+      Value: !Ref CognitoUserPool
+      Export:
+        Name: ${self:service}-${self:provider.stage}-UserPoolId
+    
+    UserPoolClientId:
+      Value: !Ref CognitoUserPoolClient
+      Export:
+        Name: ${self:service}-${self:provider.stage}-UserPoolClientId
+    
+    ApiGatewayUrl:
+      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${self:provider.region}.amazonaws.com/${self:provider.stage}'
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ApiUrl
+
+plugins:
+  - serverless-offline

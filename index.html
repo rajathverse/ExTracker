@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- AWS SDK for Cognito -->
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1578.0.min.js"></script>
+    
+    <!-- AWS Config -->
+    <script src="aws-config.js"></script>
+</head>
+<body>
+    <!-- Authentication Page (shown by default) -->
+    <div id="auth-page" class="auth-page">
+        <div class="auth-container">
+            <div class="auth-header">
+                <h1 class="auth-title">ExTracker</h1>
+                <p class="auth-subtitle">Manage Your Expenses Smartly</p>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form">
+                <h2 class="form-title">Welcome Back</h2>
+                <form id="login-form-element" class="form-element">
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <input type="email" id="login-username" required placeholder="Enter your email">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="login-password" required placeholder="Enter password">
+                    </div>
+                    <button type="submit" class="btn-primary-large">Sign In</button>
+                </form>
+                <p class="form-switch">
+                    Don't have an account? 
+                    <a href="#" onclick="showSignupForm(); return false;">Sign up here</a>
+                </p>
+            </div>
+
+            <!-- Signup Form -->
+            <div id="signup-form" class="auth-form hidden">
+                <h2 class="form-title">Create Account</h2>
+                <form id="signup-form-element" class="form-element">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" id="signup-name" required placeholder="Enter your name">
+                    </div>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <input type="email" id="signup-identifier" required placeholder="your.email@example.com">
+                        <small>We'll send a verification code to this email</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="signup-password" required minlength="8" 
+                               placeholder="Min 8 chars, uppercase, lowercase, number">
+                    </div>
+                    <button type="submit" class="btn-primary-large">Create Account</button>
+                </form>
+                <p class="form-switch">
+                    Already have an account? 
+                    <a href="#" onclick="showLoginForm(); return false;">Sign in here</a>
+                </p>
+            </div>
+
+            <!-- Verification Form -->
+            <div id="verification-form" class="auth-form hidden">
+                <h2 class="form-title">Verify Your Account</h2>
+                <p class="verification-message">Please enter the verification code sent to your email.</p>
+                <form id="verification-form-element" class="form-element">
+                    <input type="hidden" id="verify-identifier">
+                    <div class="form-group">
+                        <label>Verification Code</label>
+                        <input type="text" id="verify-code" required placeholder="Enter 6-digit code">
+                    </div>
+                    <button type="submit" class="btn-primary-large">Verify</button>
+                    <button type="button" class="btn-secondary" onclick="resendVerificationCode()">Resend Code</button>
+                </form>
+                <p class="form-switch">
+                    <a href="#" onclick="showLoginForm(); return false;">Back to login</a>
+                </p>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="auth-loading" class="auth-loading hidden">
+                <div class="spinner"></div>
+                <p>Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App (hidden by default until authenticated) -->
+    <div class="container" id="main-app" style="display: none;">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="month-selector">
+                    <button class="month-btn" id="prevMonth">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <h2 class="current-month" id="currentMonth">Nov-25</h2>
+                    <button class="month-btn" id="nextMonth">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <h1 class="app-title">ExTracker</h1>
+                <button class="logout-btn" id="logoutBtn" onclick="logout()" title="Logout">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Summary Cards -->
+        <div class="summary-cards">
+            <div class="summary-card">
+                <div class="summary-label">Total Expenses</div>
+                <div class="summary-value" id="totalExpenses">₹0</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Paid</div>
+                <div class="summary-value emerald" id="totalPaid">₹0</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Remaining</div>
+                <div class="summary-value warning" id="totalRemaining">₹0</div>
+            </div>
+        </div>
+
+        <!-- Tab Content Container -->
+        <div class="tab-content-container">
+            <!-- Monthly Expenses Tab Content -->
+            <div class="tab-content active" id="expensesTab">
+                <div class="expenses-tab-section">
+                    <div class="expenses-tab-header">
+                        <div class="expenses-tab-header-content">
+                            <div>
+                                <h2 class="expenses-tab-title">Monthly Expenses</h2>
+                                <p class="expenses-tab-subtitle">Track your daily spending</p>
+                            </div>
+                            <div class="header-actions">
+                                <button class="btn-add-expense" id="addExpenseBtn">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M10 5V15M5 10H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                    Add Expense
+                                </button>
+                                
+                                <!-- Commitments Dropdown -->
+                                <div class="commitments-dropdown">
+                                    <button class="btn-commitments" id="commitmentToggle">
+                                        <span>COMMITMENTS</span>
+                                        <svg class="toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    
+                                    <div class="commitment-group" id="commitmentGroup">
+                                        <button class="commitment-tab" data-tab="recurring">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z" fill="currentColor"/>
+                                            </svg>
+                                            Recurring Bills
+                                        </button>
+                                        <button class="commitment-tab" data-tab="emi">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
+                                                <path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor"/>
+                                            </svg>
+                                            Loan EMIs
+                                        </button>
+                                        <button class="commitment-tab" data-tab="investments">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" fill="currentColor"/>
+                                            </svg>
+                                            SIP Investments
+                                        </button>
+                                        <button class="commitment-tab" data-tab="creditcard">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" fill="currentColor"/>
+                                            </svg>
+                                            Credit Cards
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Filter Tabs -->
+                    <div class="filter-tabs">
+                        <button class="filter-tab active" data-filter="all">All</button>
+                        <button class="filter-tab" data-filter="pending">Pending</button>
+                        <button class="filter-tab" data-filter="paid">Paid</button>
+                    </div>
+
+                    <!-- Expenses List -->
+                    <div class="expenses-container" id="expensesContainer">
+                        <!-- Categories will be dynamically inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recurring Expenses Tab Content -->
+            <div class="tab-content" id="recurringTab">
+                <div class="recurring-expenses-section">
+                    <div class="recurring-expenses-header">
+                        <div class="recurring-expenses-header-content">
+                            <div>
+                                <h2 class="recurring-expenses-title">Recurring Bills</h2>
+                                <p class="recurring-expenses-subtitle">Manage your fixed monthly bills like rent, utilities, and subscriptions</p>
+                            </div>
+                            <div class="header-actions">
+                                <button class="btn-back-home" data-tab="expenses">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M15 10L5 10M5 10L9 6M5 10L9 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    Back to Monthly Expenses
+                                </button>
+                                
+                                <!-- Commitments Dropdown -->
+                                <div class="commitments-dropdown">
+                                    <button class="btn-commitments" id="commitmentToggle2">
+                                        <span>COMMITMENTS</span>
+                                        <svg class="toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    
+                                    <div class="commitment-group" id="commitmentGroup2">
+                                        <button class="commitment-tab" data-tab="recurring">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z" fill="currentColor"/>
+                                            </svg>
+                                            Recurring Bills
+                                        </button>
+                                        <button class="commitment-tab" data-tab="emi">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
+                                                <path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor"/>
+                                            </svg>
+                                            Loan EMIs
+                                        </button>
+                                        <button class="commitment-tab" data-tab="investments">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" fill="currentColor"/>
+                                            </svg>
+                                            SIP Investments
+                                        </button>
+                                        <button class="commitment-tab" data-tab="creditcard">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" fill="currentColor"/>
+                                            </svg>
+                                            Credit Cards
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <button class="btn-add-recurring" id="addRecurringBtn">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M10 5V15M5 10H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                    Add Recurring Expense
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="recurring-expenses-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    <th>Due Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recurringExpensesBody">
+                                <!-- Recurring expense rows will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- My Investments Tab Content -->
+            <div class="tab-content" id="investmentsTab">
+                <div class="investments-section" id="investmentsSection">
+                    <div class="investments-header">
+                        <div class="investments-header-content">
+                            <div>
+                                <h2 class="investments-title">SIP Investments</h2>
+                                <p class="investments-subtitle">Track your SIP and recurring investment payments and progress</p>
+                            </div>
+                            <div class="header-actions">
+                                <button class="btn-back-home" data-tab="expenses">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M15 10L5 10M5 10L9 6M5 10L9 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    Back to Monthly Expenses
+                                </button>
+                                
+                                <!-- Commitments Dropdown -->
+                                <div class="commitments-dropdown">
+                                    <button class="btn-commitments" id="commitmentToggle3">
+                                        <span>COMMITMENTS</span>
+                                        <svg class="toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    
+                                    <div class="commitment-group" id="commitmentGroup3">
+                                        <button class="commitment-tab" data-tab="recurring">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z" fill="currentColor"/>
+                                            </svg>
+                                            Recurring Bills
+                                        </button>
+                                        <button class="commitment-tab" data-tab="emi">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
+                                                <path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor"/>
+                                            </svg>
+                                            Loan EMIs
+                                        </button>
+                                        <button class="commitment-tab" data-tab="investments">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" fill="currentColor"/>
+                                            </svg>
+                                            SIP Investments
+                                        </button>
+                                        <button class="commitment-tab" data-tab="creditcard">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" fill="currentColor"/>
+                                            </svg>
+                                            Credit Cards
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <button class="btn-add-investment" id="addInvestmentBtn">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M10 5V15M5 10H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                    Add Investment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="investments-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Investment Name</th>
+                                    <th>Monthly Amount</th>
+                                    <th>SIP Paid</th>
+                                    <th>Total Months</th>
+                                    <th>Months Left</th>
+                                    <th>Total Invested</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="investmentsBody">
+                                <!-- Investment rows will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EMI Tracker Tab Content -->
+            <div class="tab-content" id="emiTab">
+                <div class="emi-tracker-section" id="emiTrackerSection">
+                    <div class="emi-tracker-header">
+                        <div class="emi-tracker-header-content">
+                            <div>
+                                <h2 class="emi-tracker-title">Loan EMIs</h2>
+                                <p class="emi-tracker-subtitle">Track your loan EMI payments, progress and remaining balance</p>
+                            </div>
+                            <div class="header-actions">
+                                <button class="btn-back-home" data-tab="expenses">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M15 10L5 10M5 10L9 6M5 10L9 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    Back to Monthly Expenses
+                                </button>
+                                
+                                <!-- Commitments Dropdown -->
+                                <div class="commitments-dropdown">
+                                    <button class="btn-commitments" id="commitmentToggle4">
+                                        <span>COMMITMENTS</span>
+                                        <svg class="toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    
+                                    <div class="commitment-group" id="commitmentGroup4">
+                                        <button class="commitment-tab" data-tab="recurring">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z" fill="currentColor"/>
+                                            </svg>
+                                            Recurring Bills
+                                        </button>
+                                        <button class="commitment-tab" data-tab="emi">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
+                                                <path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor"/>
+                                            </svg>
+                                            Loan EMIs
+                                        </button>
+                                        <button class="commitment-tab" data-tab="investments">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" fill="currentColor"/>
+                                            </svg>
+                                            SIP Investments
+                                        </button>
+                                        <button class="commitment-tab" data-tab="creditcard">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" fill="currentColor"/>
+                                            </svg>
+                                            Credit Cards
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <button class="btn-add-emi" id="addEmiBtn">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M10 5V15M5 10H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                    Add Loan EMI
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="emi-tracker-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Particulars</th>
+                                    <th>EMI Amount</th>
+                                    <th>EMI Paid</th>
+                                    <th>Total EMI</th>
+                                    <th>EMI Left</th>
+                                    <th>Total Remaining</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emiTrackerBody">
+                                <!-- EMI rows will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Credit Card Tracker Tab Content -->
+            <div class="tab-content" id="creditcardTab">
+                <div class="credit-card-section" id="creditCardSection">
+                    <div class="credit-card-header">
+                        <div class="credit-card-header-content">
+                            <div>
+                                <h2 class="credit-card-title">Credit Card Tracker</h2>
+                                <p class="credit-card-subtitle">Monitor your credit card limits, outstanding amounts, and usage</p>
+                            </div>
+                            <div class="header-actions">
+                                <button class="btn-back-home" data-tab="expenses">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M15 10L5 10M5 10L9 6M5 10L9 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    Back to Monthly Expenses
+                                </button>
+                                
+                                <!-- Commitments Dropdown -->
+                                <div class="commitments-dropdown">
+                                    <button class="btn-commitments" id="commitmentToggle5">
+                                        <span>COMMITMENTS</span>
+                                        <svg class="toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    
+                                    <div class="commitment-group" id="commitmentGroup5">
+                                        <button class="commitment-tab" data-tab="recurring">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z" fill="currentColor"/>
+                                            </svg>
+                                            Recurring Bills
+                                        </button>
+                                        <button class="commitment-tab" data-tab="emi">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
+                                                <path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor"/>
+                                            </svg>
+                                            Loan EMIs
+                                        </button>
+                                        <button class="commitment-tab" data-tab="investments">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" fill="currentColor"/>
+                                            </svg>
+                                            SIP Investments
+                                        </button>
+                                        <button class="commitment-tab" data-tab="creditcard">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" fill="currentColor"/>
+                                            </svg>
+                                            Credit Cards
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <button class="btn-add-card" id="addCardBtn">
+                                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                                        <path d="M10 5V15M5 10H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                    Add Credit Card
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="credit-card-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Credit Card Name</th>
+                                    <th>Limit</th>
+                                    <th>Outstanding</th>
+                                    <th>Balance</th>
+                                    <th>Usage %</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="creditCardBody">
+                                <!-- Credit card rows will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Modal -->
+        <div class="modal" id="expenseModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Add Expense</h3>
+                    <button class="close-btn" id="closeModal">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <form id="expenseForm">
+                    <div class="form-group" id="categoryGroup">
+                        <label for="category">Category / Description</label>
+                        <input type="text" id="category" placeholder="e.g., Bills, Rent, Groceries, Shopping" required>
+                    </div>
+                    <div class="form-group" id="bankNameGroup" style="display: none;">
+                        <label for="bankName">Bank Name</label>
+                        <input type="text" id="bankName" placeholder="e.g., HDFC, ICICI, SBI">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="amount">Amount (₹)</label>
+                            <input type="number" id="amount" placeholder="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label for="dueDate">Due Date (Day of Month)</label>
+                            <input type="number" id="dueDate" placeholder="e.g., 5" min="1" max="31">
+                        </div>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="isRecurring">
+                            <span>Recurring monthly expense (EMI)</span>
+                        </label>
+                    </div>
+                    <div class="form-row" id="emiDetailsRow" style="display: none;">
+                        <div class="form-group">
+                            <label for="emiPaid">EMIs Paid</label>
+                            <input type="number" id="emiPaid" placeholder="0" min="0" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="emiTotal">Total EMIs</label>
+                            <input type="number" id="emiTotal" placeholder="60" min="1" value="60" required>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Credit Card Modal -->
+        <div class="modal" id="creditCardModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="cardModalTitle">Add Credit Card</h3>
+                    <button class="close-btn" id="closeCardModal">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <form id="creditCardForm">
+                    <div class="form-group">
+                        <label for="cardName">Credit Card Name</label>
+                        <input type="text" id="cardName" placeholder="e.g., ICICI, HDFC, Kotak" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cardLimit">Credit Limit (₹)</label>
+                            <input type="number" id="cardLimit" placeholder="0" step="1" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cardOutstanding">Outstanding Amount (₹)</label>
+                            <input type="number" id="cardOutstanding" placeholder="0" step="1" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelCardBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Investment Modal -->
+        <div class="modal" id="investmentModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="investmentModalTitle">Add Investment</h3>
+                    <button class="close-btn" id="closeInvestmentModal">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <form id="investmentForm">
+                    <div class="form-group">
+                        <label for="investmentName">Investment Name</label>
+                        <input type="text" id="investmentName" placeholder="e.g., SBI SIP, HDFC Mutual Fund" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="investmentAmount">Monthly Amount (₹)</label>
+                            <input type="number" id="investmentAmount" placeholder="5000" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="investmentDueDate">Due Date (Day of Month)</label>
+                            <input type="number" id="investmentDueDate" placeholder="e.g., 5" min="1" max="31">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="monthsPaid">Months Paid</label>
+                            <input type="number" id="monthsPaid" placeholder="0" min="0" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="totalMonths">Total Months</label>
+                            <input type="number" id="totalMonths" placeholder="60 (0 = unlimited)" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelInvestmentBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recurring Expense Modal -->
+        <div class="modal" id="recurringExpenseModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="recurringExpenseModalTitle">Add Recurring Expense</h3>
+                    <button class="close-btn" id="closeRecurringExpenseModal">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <form id="recurringExpenseForm">
+                    <div class="form-group">
+                        <label for="recurringCategory">Category</label>
+                        <select id="recurringCategory" required>
+                            <option value="">Select Category</option>
+                            <option value="Rent">Rent</option>
+                            <option value="Electricity">Electricity</option>
+                            <option value="Water">Water</option>
+                            <option value="Gas">Gas</option>
+                            <option value="Internet">Internet/WiFi</option>
+                            <option value="Mobile">Mobile Recharge</option>
+                            <option value="OTT">OTT Subscription</option>
+                            <option value="Insurance">Insurance</option>
+                            <option value="Maintenance">Maintenance</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="recurringOtherNameGroup" style="display: none;">
+                        <label for="recurringOtherName">Expense Name</label>
+                        <input type="text" id="recurringOtherName" placeholder="Enter expense name">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="recurringAmount">Amount (₹)</label>
+                            <input type="number" id="recurringAmount" placeholder="1500" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="recurringDueDate">Due Date (Day of Month)</label>
+                            <input type="number" id="recurringDueDate" placeholder="e.g., 5" min="1" max="31" required>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelRecurringBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div class="modal" id="deleteModal">
+            <div class="modal-content modal-small">
+                <div class="modal-header">
+                    <h3>Confirm Delete</h3>
+                </div>
+                <div class="modal-body">
+                    <p id="deleteMessage">Are you sure you want to delete this item?</p>
+                    <div id="deleteOptionsGroup" style="display: none; margin-top: 1rem;">
+                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="deleteFromAllFutureMonths" checked>
+                            <span style="font-size: 0.9rem; color: var(--gray-700);">Also delete from all future months</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication Script (loaded before app.js) -->
+    <script src="auth.js"></script>
+    
+    <!-- API Service Layer -->
+    <script src="api-service.js"></script>
+    
+    <script src="app.js"></script>
+</body>
+</html>

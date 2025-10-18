@@ -1,0 +1,32 @@
+{
+  "name": "extracker-backend",
+  "version": "1.0.0",
+  "description": "ExTracker - Expense Tracker Backend with AWS Lambda",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "remove": "serverless remove",
+    "logs": "serverless logs -f",
+    "offline": "serverless offline"
+  },
+  "keywords": [
+    "expense-tracker",
+    "aws",
+    "lambda",
+    "serverless",
+    "dynamodb",
+    "cognito"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.1578.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "serverless": "^3.38.0",
+    "serverless-offline": "^13.3.3"
+  }
+}
